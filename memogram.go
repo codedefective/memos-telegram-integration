@@ -1,6 +1,7 @@
 package memogram
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf16"
 
 	"connectrpc.com/connect"
@@ -22,6 +24,38 @@ import (
 	v1pb "github.com/usememos/memos/proto/gen/api/v1"
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 )
+
+// contentLengthTransport buffers request bodies so that a known
+// Content-Length is sent. The local Telegram Bot API server (--local)
+// rejects chunked request bodies and answers with an empty 400 response,
+// which breaks the library's io.Pipe()-based streaming (go-telegram/bot#285).
+type contentLengthTransport struct {
+	base http.RoundTripper
+}
+
+func (t *contentLengthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.Body != nil && req.ContentLength <= 0 {
+		buf, err := io.ReadAll(req.Body)
+		_ = req.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+		if len(buf) == 0 {
+			req.Body = http.NoBody
+			req.GetBody = func() (io.ReadCloser, error) {
+				return http.NoBody, nil
+			}
+		} else {
+			req.Body = io.NopCloser(bytes.NewReader(buf))
+			req.GetBody = func() (io.ReadCloser, error) {
+				return io.NopCloser(bytes.NewReader(buf)), nil
+			}
+		}
+		req.ContentLength = int64(len(buf))
+		req.TransferEncoding = nil
+	}
+	return t.base.RoundTrip(req)
+}
 
 type Service struct {
 	bot        *bot.Bot
@@ -77,6 +111,14 @@ func NewService() (*Service, error) {
 	opts := []bot.Option{
 		bot.WithDefaultHandler(s.handler),
 		bot.WithCallbackQueryDataHandler("", bot.MatchTypePrefix, s.callbackQueryHandler),
+		// The local Telegram Bot API server (--local) rejects requests with
+		// Transfer-Encoding: chunked, which the library otherwise produces
+		// via io.Pipe(). Buffer the body and send a known Content-Length
+		// (see go-telegram/bot#285).
+		bot.WithHTTPClient(time.Minute, &http.Client{
+			Transport: &contentLengthTransport{base: http.DefaultTransport},
+			Timeout:   time.Minute,
+		}),
 	}
 	if config.BotProxyAddr != "" {
 		opts = append(opts, bot.WithServerURL(config.BotProxyAddr))
