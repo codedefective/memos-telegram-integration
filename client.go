@@ -2,9 +2,14 @@ package memogram
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/usememos/memos/proto/gen/api/v1/apiv1connect"
 )
+
+// Uploading multi-GB attachments through the Connect protocol takes a long
+// time, so give the Memos client a generous timeout.
+const memosAPITimeout = time.Minute * 60
 
 type MemosClient struct {
 	baseURL string
@@ -19,7 +24,9 @@ type MemosClient struct {
 // NewMemosClient creates a new client using Connect protocol
 // baseURL should be the full HTTP URL (e.g., "http://localhost:8081")
 func NewMemosClient(baseURL string) *MemosClient {
-	httpClient := http.DefaultClient
+	httpClient := &http.Client{
+		Timeout: memosAPITimeout,
+	}
 
 	return &MemosClient{
 		baseURL:           baseURL,
@@ -38,6 +45,7 @@ func (c *MemosClient) NewAuthenticatedClient(accessToken string) *MemosClient {
 			token:     accessToken,
 			transport: http.DefaultTransport,
 		},
+		Timeout: memosAPITimeout,
 	}
 
 	return &MemosClient{

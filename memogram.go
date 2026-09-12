@@ -74,6 +74,10 @@ type Service struct {
 const (
 	commandStart  = "/start"
 	commandSearch = "/search"
+
+	// The local Bot API server downloads the requested file from Telegram
+	// before answering getFile, so large files need a generous HTTP timeout.
+	botAPITimeout = time.Minute * 30
 )
 
 func NewService() (*Service, error) {
@@ -117,7 +121,7 @@ func NewService() (*Service, error) {
 		// (see go-telegram/bot#285).
 		bot.WithHTTPClient(time.Minute, &http.Client{
 			Transport: &contentLengthTransport{base: http.DefaultTransport},
-			Timeout:   time.Minute,
+			Timeout:   botAPITimeout,
 		}),
 	}
 	if config.BotProxyAddr != "" {
