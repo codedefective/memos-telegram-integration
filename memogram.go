@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -559,30 +560,9 @@ func (s *Service) processFileMessage(ctx context.Context, client *MemosClient, b
 }
 
 func (s *Service) saveAttachmentFromFile(ctx context.Context, client *MemosClient, file *models.File, memo *v1pb.Memo) (*v1pb.Attachment, error) {
-	fileLink := s.bot.FileDownloadLink(file)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fileLink, nil)
+	bytes, contentType, err := s.loadFileBytes(ctx, file)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create download request: %w", err)
-	}
-
-	response, err := s.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to download file: %w", err)
-	}
-	defer response.Body.Close()
-
-	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusBadRequest {
-		return nil, fmt.Errorf("download failed with status %s", response.Status)
-	}
-
-	bytes, err := io.ReadAll(response.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read file: %w", err)
-	}
-
-	contentType := response.Header.Get("Content-Type")
-	if contentType == "" || contentType == "application/octet-stream" {
-		contentType = http.DetectContentType(bytes)
+		return nil, err
 	}
 	if contentType == "" {
 		contentType = "application/octet-stream"
@@ -602,6 +582,55 @@ func (s *Service) saveAttachmentFromFile(ctx context.Context, client *MemosClien
 	}
 
 	return resp.Msg, nil
+}
+
+// loadFileBytes returns the file content and its content type.
+// When running against a local Bot API server, getFile returns the absolute
+// local path of the file, so it is read from the shared volume instead of
+// being downloaded over HTTP.
+func (s *Service) loadFileBytes(ctx context.Context, file *models.File) ([]byte, string, error) {
+	if filepath.IsAbs(file.FilePath) {
+		bytes, err := os.ReadFile(file.FilePath)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to read local file: %w", err)
+		}
+		contentType := http.DetectContentType(bytes)
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+		return bytes, contentType, nil
+	}
+
+	fileLink := s.bot.FileDownloadLink(file)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fileLink, nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to create download request: %w", err)
+	}
+
+	response, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to download file: %w", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusBadRequest {
+		return nil, "", fmt.Errorf("download failed with status %s", response.Status)
+	}
+
+	bytes, err := io.ReadAll(response.Body)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to read file: %w", err)
+	}
+
+	contentType := response.Header.Get("Content-Type")
+	if contentType == "" || contentType == "application/octet-stream" {
+		contentType = http.DetectContentType(bytes)
+	}
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+
+	return bytes, contentType, nil
 }
 
 func (s *Service) sendError(b *bot.Bot, chatID int64, err error) {
