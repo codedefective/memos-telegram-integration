@@ -14,4 +14,8 @@ ENV SERVER_ADDR=dns:localhost:5230
 ENV BOT_TOKEN=your_telegram_bot_token
 COPY .env.example .env
 COPY --from=builder /app/memogram .
+# Memogram reads files written by the local Telegram Bot API server
+# (running as uid 101). Run as root to guarantee access to the shared
+# bot-api volume and to the data file.
+USER 0
 CMD ["./memogram"]
