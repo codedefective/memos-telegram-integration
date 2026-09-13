@@ -144,6 +144,7 @@ func NewService() (*Service, error) {
 
 func (s *Service) Start(ctx context.Context) {
 	slog.Info("Memogram started")
+	slog.Info("BUILD_MARKER_MEMOGRAM_20260913 alpha", slog.String("botApiTimeout", fmt.Sprintf("%d min", int(botAPITimeout/time.Minute))))
 	// Try to get instance profile.
 	resp, err := s.client.InstanceService.GetInstanceProfile(ctx, connect.NewRequest(&v1pb.GetInstanceProfileRequest{}))
 	if err != nil {
