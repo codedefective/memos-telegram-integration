@@ -597,7 +597,12 @@ func buildMemoSearchFilter(searchString string, user *v1pb.User) string {
 }
 
 func (s *Service) processFileMessage(ctx context.Context, client *MemosClient, b *bot.Bot, m *models.Update, fileID string, memo *v1pb.Memo) {
-	file, err := b.GetFile(ctx, &bot.GetFileParams{FileID: fileID})
+	// The local Bot API server downloads the whole file from Telegram before
+	// answering getFile, which can take minutes for large files. Give the call
+	// an explicit generous deadline instead of inheriting a short one.
+	fileCtx, cancel := context.WithTimeout(context.Background(), botAPITimeout)
+	defer cancel()
+	file, err := b.GetFile(fileCtx, &bot.GetFileParams{FileID: fileID})
 	if err != nil {
 		s.sendError(b, m.Message.Chat.ID, fmt.Errorf("failed to get file: %w", err))
 		return
