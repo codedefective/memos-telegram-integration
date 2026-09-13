@@ -638,6 +638,16 @@ func (s *Service) saveAttachmentFromFile(ctx context.Context, client *MemosClien
 		return nil, fmt.Errorf("failed to create attachment: %w", err)
 	}
 
+	// Once the attachment is persisted in Memos, the local copy held by the
+	// Bot API server is no longer needed. Remove it to keep the shared
+	// telegram-bot-api volume from growing unboundedly. Only applies to local
+	// (absolute path) mode; cloud mode files are fetched over HTTP.
+	if filepath.IsAbs(file.FilePath) {
+		if rmErr := os.Remove(file.FilePath); rmErr != nil && !os.IsNotExist(rmErr) {
+			slog.Warn("failed to remove processed file", slog.String("path", file.FilePath), slog.Any("err", rmErr))
+		}
+	}
+
 	return resp.Msg, nil
 }
 
