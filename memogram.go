@@ -77,7 +77,8 @@ const (
 
 	// The local Bot API server downloads the requested file from Telegram
 	// before answering getFile, so large files need a generous HTTP timeout.
-	botAPITimeout = time.Minute * 30
+	botAPITimeoutMinutes = 30
+	botAPITimeout        = botAPITimeoutMinutes * time.Minute
 )
 
 func NewService() (*Service, error) {
@@ -133,6 +134,10 @@ func NewService() (*Service, error) {
 		return nil, fmt.Errorf("failed to create bot: %w", err)
 	}
 	s.bot = b
+	slog.Info("bot api configured",
+		slog.Int("timeoutMinutes", botAPITimeoutMinutes),
+		slog.String("proxyAddr", config.BotProxyAddr),
+	)
 
 	return s, nil
 }
